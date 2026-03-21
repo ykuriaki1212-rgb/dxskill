@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DXスキル進捗ダッシュボード</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0066CC;
+            --primary-dark: #004C99;
+            --accent: #00B4D8;
+            --success: #00C896;
+            --warning: #FFB800;
+            --danger: #FF4757;
+            --bg-dark: #0A1628;
+            --bg-card: #111D32;
+            --bg-input: #1A2942;
+            --text-primary: #FFFFFF;
+            --text-secondary: #8B9EB3;
+            --border: #2A3F5F;
+            --gradient-1: linear-gradient(135deg, #0066CC 0%, #00B4D8 100%);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Sans JP', 'Poppins', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10, 22, 40, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.3s ease;
+        }
+        .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+        .loading-spinner {
+            width: 50px; height: 50px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 20px; color: var(--text-secondary); }
+
+        /* Status Bar */
+        .status-bar {
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            border: 1px solid var(--border);
+        }
+        .status-indicator { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
+        .status-dot.connected { background: var(--success); }
+        .status-dot.syncing { background: var(--warning); animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .sync-info { font-size: 12px; color: var(--text-secondary); }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: var(--shadow);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 2000;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { border-color: var(--success); }
+        .toast.error { border-color: var(--danger); }
+
+        .header {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: var(--gradient-1);
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+        .header-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: var(--gradient-1);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 102, 204, 0.3);
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .header-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 102, 204, 0.4);
+        }
+
+        .header-link.secondary {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+
+        .progress-overview {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+        }
+
+        .progress-overview h2 {
+            font-size: 20px;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .progress-overview h2::before { content: '📊'; }
+
+        .progress-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+        }
+
+        .progress-card {
+            background: var(--bg-input);
+            border-radius: 12px;
+            padding: 18px;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .progress-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shadow);
+        }
+
+        .progress-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .progress-card-title { font-size: 13px; font-weight: 600; }
+        .progress-card-percent { font-size: 20px; font-weight: 700; color: var(--accent); }
+
+        .progress-bar-container {
+            background: var(--bg-dark);
+            border-radius: 8px;
+            height: 8px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: 8px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .tab-nav-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+        }
+
+        .tab-nav-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .tab-nav-title { font-size: 18px; font-weight: 600; }
+        .tab-nav-hint { font-size: 11px; color: var(--text-secondary); margin-left: 10px; }
+
+        .tab-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .tab-btn {
+            padding: 10px 16px;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tab-btn:hover { border-color: var(--primary); color: var(--text-primary); }
+
+        .tab-btn.active {
+            background: var(--gradient-1);
+            border-color: transparent;
+            color: white;
+        }
+
+        .tab-btn .delete-tab {
+            width: 18px;
+            height: 18px;
+            background: rgba(255, 71, 87, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: #FF4757;
+            transition: all 0.2s ease;
+            margin-left: 4px;
+        }
+
+        .tab-btn .delete-tab:hover {
+            background: #FF4757;
+            color: white;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary { background: var(--gradient-1); color: white; }
+        .btn-secondary { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-small { padding: 6px 12px; font-size: 11px; }
+        .btn-danger { background: var(--danger); color: white; }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .tab-content {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+            display: none;
+        }
+
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .content-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .content-header h3 { font-size: 20px; font-weight: 600; }
+
+        .entry-form {
+            background: var(--bg-input);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            border: 1px solid var(--border);
+        }
+
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px 12px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-actions { display: flex; align-items: flex-end; gap: 10px; }
+
+        .entry-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; }
+
+        .entry-item {
+            background: var(--bg-input);
+            border-radius: 12px;
+            padding: 18px;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .entry-item:hover { border-color: var(--primary); }
+
+        .entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+
+        .entry-title { font-size: 15px; font-weight: 600; flex: 1; }
+
+        .entry-date {
+            font-size: 11px;
+            color: var(--warning);
+            background: rgba(255, 184, 0, 0.15);
+            padding: 4px 10px;
+            border-radius: 12px;
+            white-space: nowrap;
+        }
+
+        .entry-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .entry-badge.udemy { background: rgba(165, 94, 234, 0.2); color: #A55EEA; }
+        .entry-badge.youtube { background: rgba(255, 71, 87, 0.2); color: #FF4757; }
+        .entry-badge.other { background: rgba(0, 200, 150, 0.2); color: #00C896; }
+
+        .entry-description {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .entry-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .entry-time {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .entry-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .entry-link:hover { color: var(--accent); }
+
+        .entry-actions { display: flex; gap: 8px; }
+
+        .entry-actions button {
+            padding: 5px 12px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .entry-actions button:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .entry-actions button:first-child:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        /* Videos Section */
+        .videos-section {
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 1px solid var(--border);
+        }
+
+        .videos-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .videos-header h4 {
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .video-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+        }
+
+        .video-item {
+            background: var(--bg-dark);
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .video-item:hover {
+            border-color: #FF4757;
+            transform: translateY(-2px);
+        }
+
+        .video-item-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .video-item:hover .video-item-actions { opacity: 1; }
+
+        .video-item-actions button {
+            width: 26px;
+            height: 26px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-item-actions button:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .video-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #FF0000, #CC0000);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+        }
+
+        .video-icon svg { width: 16px; height: 16px; fill: white; }
+
+        .video-item-title {
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 10px;
+            padding-right: 60px;
+        }
+
+        .video-item-link {
+            color: #FF4757;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .video-item-link:hover { color: #FF6B7A; }
+
+        /* Add Video Form */
+        .add-video-form {
+            background: var(--bg-input);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            display: none;
+            border: 1px solid var(--border);
+        }
+
+        .add-video-form.active { display: block; }
+
+        .add-video-form .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 12px;
+            align-items: end;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 28px;
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid var(--border);
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal { transform: translateY(0); }
+
+        .modal h3 { font-size: 18px; margin-bottom: 20px; }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon { font-size: 48px; margin-bottom: 15px; }
+
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            .header h1 { font-size: 20px; }
+            .entry-form { grid-template-columns: 1fr; }
+            .tab-btn { padding: 8px 12px; font-size: 11px; }
+            .add-video-form .form-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">データを読み込み中...</div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <div class="container">
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">接続確認中...</span>
+            </div>
+            <div class="sync-info" id="syncInfo">最終同期: --</div>
+        </div>
+
+        <header class="header">
+            <div class="header-content">
+                <h1>🚀 DXスキル進捗ダッシュボード</h1>
+                <div class="header-actions">
+                    <a href="https://ntt-eastjp.udemy.com/organization/home/" target="_blank" class="header-link">
+                        📚 Udemy Business を開く
+                    </a>
+                    <button class="header-link secondary" onclick="exportData()">
+                        💾 エクスポート
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <section class="progress-overview">
+            <h2>全体進捗状況</h2>
+            <div class="progress-grid" id="progressGrid"></div>
+        </section>
+
+        <div class="tab-nav-container">
+            <div class="tab-nav-header">
+                <div>
+                    <span class="tab-nav-title">📚 学習テーマ</span>
+                    <span class="tab-nav-hint">（タブの×で削除 / ダブルクリックで編集）</span>
+                </div>
+                <button class="btn btn-primary" onclick="openModal('addTab')">＋ タブを追加</button>
+            </div>
+            <nav class="tab-nav" id="tabNav"></nav>
+        </div>
+
+        <div id="tabContents"></div>
+    </div>
+
+    <!-- Add Tab Modal -->
+    <div class="modal-overlay" id="addTabModal">
+        <div class="modal">
+            <h3>📁 新しいタブを追加</h3>
+            <div class="form-group">
+                <label>タブ名</label>
+                <input type="text" id="newTabName" placeholder="例：Python学習">
+            </div>
+            <div class="form-group" style="margin-top:15px">
+                <label>目標学習時間（時間）</label>
+                <input type="number" id="newTabGoal" placeholder="50" value="50">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('addTab')">キャンセル</button>
+                <button class="btn btn-primary" onclick="addNewTab()">追加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Tab Modal -->
+    <div class="modal-overlay" id="editTabModal">
+        <div class="modal">
+            <h3>✏️ タブを編集</h3>
+            <div class="form-group">
+                <label>タブ名</label>
+                <input type="text" id="editTabName">
+            </div>
+            <div class="form-group" style="margin-top:15px">
+                <label>目標学習時間（時間）</label>
+                <input type="number" id="editTabGoal">
+            </div>
+            <input type="hidden" id="editTabId">
+            <div class="modal-actions" style="justify-content:space-between">
+                <button class="btn btn-danger" onclick="deleteTabFromModal()">🗑️ タブを削除</button>
+                <div style="display:flex;gap:10px">
+                    <button class="btn btn-secondary" onclick="closeModal('editTab')">キャンセル</button>
+                    <button class="btn btn-primary" onclick="saveTabEdit()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Video Modal -->
+    <div class="modal-overlay" id="editVideoModal">
+        <div class="modal">
+            <h3>🎥 動画リンクを編集</h3>
+            <div class="form-group">
+                <label>タイトル</label>
+                <input type="text" id="editVideoTitle">
+            </div>
+            <div class="form-group" style="margin-top:15px">
+                <label>URL</label>
+                <input type="url" id="editVideoUrl">
+            </div>
+            <input type="hidden" id="editVideoTabId">
+            <input type="hidden" id="editVideoIndex">
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('editVideo')">キャンセル</button>
+                <button class="btn btn-primary" onclick="saveVideoEdit()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Entry Modal -->
+    <div class="modal-overlay" id="editEntryModal">
+        <div class="modal" style="max-width:600px">
+            <h3>✏️ 学習記録を編集</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
+                <div class="form-group">
+                    <label>日付</label>
+                    <input type="date" id="editEntryDate">
+                </div>
+                <div class="form-group">
+                    <label>勉強時間（時間）</label>
+                    <input type="number" id="editEntryHours" step="0.5" min="0">
+                </div>
+            </div>
+            <div class="form-group" style="margin-top:15px">
+                <label>テーマ</label>
+                <input type="text" id="editEntryTheme">
+            </div>
+            <div class="form-group" style="margin-top:15px">
+                <label>説明</label>
+                <input type="text" id="editEntryDesc">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-top:15px">
+                <div class="form-group">
+                    <label>媒体</label>
+                    <select id="editEntryMedia">
+                        <option value="Udemy Business">Udemy Business</option>
+                        <option value="YouTube">YouTube</option>
+                        <option value="その他">その他</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>URL</label>
+                    <input type="url" id="editEntryUrl" placeholder="https://...">
+                </div>
+            </div>
+            <input type="hidden" id="editEntryTabId">
+            <input type="hidden" id="editEntryId">
+            <div class="modal-actions" style="justify-content:space-between">
+                <button class="btn btn-danger" onclick="deleteEntryFromModal()">🗑️ 削除</button>
+                <div style="display:flex;gap:10px">
+                    <button class="btn btn-secondary" onclick="closeModal('editEntry')">キャンセル</button>
+                    <button class="btn btn-primary" onclick="saveEntryEdit()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // 設定 - Google Apps ScriptのウェブアプリURLを設定
+        // ============================================
+        const API_URL = 'https://script.google.com/macros/s/AKfycbxiUWF8SSzc7B6aFyCDNLbu2Jf_C39IgSnEItI-0IywsHvWr3-lJt6GD9qEDfW3VeecWw/exec';
+
+        // ============================================
+        // カラーパレット
+        // ============================================
+        const colorPalette = [
+            'linear-gradient(90deg, #0066CC, #00B4D8)',
+            'linear-gradient(90deg, #667eea, #764ba2)',
+            'linear-gradient(90deg, #00C896, #00E676)',
+            'linear-gradient(90deg, #FFB800, #FF9500)',
+            'linear-gradient(90deg, #FF4757, #FF6B7A)',
+            'linear-gradient(90deg, #00D9FF, #00A8CC)',
+            'linear-gradient(90deg, #A55EEA, #8B5CF6)',
+            'linear-gradient(90deg, #10B981, #059669)',
+            'linear-gradient(90deg, #F59E0B, #D97706)',
+            'linear-gradient(90deg, #EF4444, #DC2626)'
+        ];
+
+        // ============================================
+        // 初期データ
+        // ============================================
+        const defaultData = {
+            tabs: [
+                {
+                    id: 'power-apps', name: 'Power Apps', icon: '⚡', goalHours: 50,
+                    entries: [
+                        { id: 1, date: '2025-04-14', theme: 'Power Apps基礎マスターコース ひょうのもとはる', description: '説明がパワポなどを用いて丁寧で分かりやすい', hours: 2, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-04-15', theme: 'Power Appsで勤怠管理アプリを作成する！ Tobby-IT', description: '速い。変数など肝心なところが分かりにくい', hours: 5, media: 'YouTube', url: 'https://youtu.be/u6-uHPDIhds' },
+                        { id: 3, date: '2025-05-12', theme: 'Power Apps ひょうのもとはる', description: '3画面構成の基本がわかった', hours: 5, media: 'Udemy Business', url: '' },
+                        { id: 4, date: '2025-05-15', theme: '（実践）決裁ルート判定アプリ作成', description: '会社で公共向けに作成', hours: 5, media: 'その他', url: '' },
+                        { id: 5, date: '2025-05-19', theme: 'Power Apps トラブル管理表', description: 'アプリ完成・正常性確認済み', hours: 4, media: 'Udemy Business', url: '' },
+                        { id: 6, date: '2025-12-05', theme: 'マインドフルネス瞑想記録簿＆ダッシュボード', description: 'Power Apps & Power BI連携', hours: 7, media: 'その他', url: '' }
+                    ],
+                    videos: [
+                        { title: 'Power Apps 初心者向け入門講座【完全版】', url: 'https://www.youtube.com/results?search_query=Power+Apps+初心者+入門+完全版' },
+                        { title: 'ひょうのもとはる Power Apps基礎マスター', url: 'https://www.youtube.com/@hyounomotoharu' },
+                        { title: 'Power Apps 勤怠管理アプリ作成 Tobby-IT', url: 'https://youtu.be/u6-uHPDIhds' },
+                        { title: 'GEEK フジワラ Power Apps チュートリアル', url: 'https://youtu.be/WX0bTORgZDk' },
+                        { title: 'Power Apps 変数の使い方 完全解説', url: 'https://www.youtube.com/results?search_query=Power+Apps+変数+使い方' },
+                        { title: 'Power Apps SharePoint連携', url: 'https://www.youtube.com/results?search_query=Power+Apps+SharePoint+連携' },
+                        { title: 'Power Automate 自動化入門', url: 'https://www.youtube.com/results?search_query=Power+Automate+入門+自動化' },
+                        { title: 'Power Platform 活用事例', url: 'https://www.youtube.com/results?search_query=Power+Platform+活用事例+企業' },
+                        { title: 'Power Apps ギャラリーとフォームの使い方', url: 'https://www.youtube.com/results?search_query=Power+Apps+ギャラリー+フォーム' },
+                        { title: 'Power Apps データソース接続', url: 'https://www.youtube.com/results?search_query=Power+Apps+データソース+接続' }
+                    ]
+                },
+                {
+                    id: 'ai-genai', name: 'AI・生成AI', icon: '🤖', goalHours: 60,
+                    entries: [
+                        { id: 1, date: '2025-05-04', theme: 'Gamma/Mapify/Genspark/Felo', description: 'AI比較学習', hours: 2, media: 'YouTube', url: '' },
+                        { id: 2, date: '2025-06-05', theme: 'Copilot Chat（GEEK Fujiwara）', description: 'Copilot学習', hours: 1.3, media: 'Udemy Business', url: '' },
+                        { id: 3, date: '2025-09-12', theme: 'Copilotの完全教科書（4時間コース）', description: 'Copilot完全攻略', hours: 6, media: 'Udemy Business', url: '' },
+                        { id: 4, date: '2025-11-16', theme: 'Dify 生成AI入門', description: 'Dify学習開始', hours: 4, media: 'Udemy Business', url: '' },
+                        { id: 5, date: '2025-12-07', theme: 'Dify 生成AI徹底活用 世界の青木', description: 'エンジニア向けDify学習', hours: 19, media: 'Udemy Business', url: '' },
+                        { id: 6, date: '2025-11-27', theme: 'SIグランプリ 営業×AI活用', description: '営業の劇場型バトル', hours: 2.5, media: 'YouTube', url: 'https://youtu.be/4cVSh2VEV30' }
+                    ],
+                    videos: [
+                        { title: 'ChatGPT 完全攻略ガイド 2025', url: 'https://www.youtube.com/results?search_query=ChatGPT+完全攻略+2025' },
+                        { title: 'Claude AI 使い方徹底解説', url: 'https://www.youtube.com/results?search_query=Claude+AI+使い方+日本語' },
+                        { title: 'Microsoft Copilot 仕事効率化', url: 'https://www.youtube.com/results?search_query=Microsoft+Copilot+仕事+効率化' },
+                        { title: 'Dify AIワークフロー構築入門', url: 'https://www.youtube.com/results?search_query=Dify+ワークフロー+入門' },
+                        { title: 'Perplexity AI リサーチ活用術', url: 'https://www.youtube.com/results?search_query=Perplexity+AI+使い方' },
+                        { title: 'Gemini 2.5 Pro DeepResearch', url: 'https://www.youtube.com/results?search_query=Gemini+2.5+Pro+DeepResearch' },
+                        { title: 'NotebookLM 活用術', url: 'https://www.youtube.com/results?search_query=NotebookLM+使い方+活用' },
+                        { title: 'n8n AIワークフロー自動化', url: 'https://youtu.be/SlCDh9iEURg' },
+                        { title: 'Gamma AI プレゼン作成', url: 'https://www.youtube.com/results?search_query=Gamma+AI+プレゼン' },
+                        { title: 'AIエージェント 最新動向', url: 'https://www.youtube.com/results?search_query=AIエージェント+最新+2025' }
+                    ]
+                },
+                {
+                    id: 'canva', name: 'Canva', icon: '🎨', goalHours: 40,
+                    entries: [
+                        { id: 1, date: '2025-05-06', theme: 'Canvaプレゼン資料作成', description: 'プレゼン資料作成の基礎', hours: 2, media: 'YouTube', url: '' },
+                        { id: 2, date: '2025-05-08', theme: 'Canvaで講義資料作成', description: '講義資料作成', hours: 10, media: 'その他', url: '' },
+                        { id: 3, date: '2025-05-20', theme: 'Canva / キカガク AI/IoT', description: '動画を見ながらCanvaで資料作成', hours: 19, media: 'Udemy Business', url: '' },
+                        { id: 4, date: '2025-06-06', theme: 'Canva 短編30秒動画作成', description: 'ダーツ大会イベント投稿', hours: 3, media: 'その他', url: '' }
+                    ],
+                    videos: [
+                        { title: 'Canva 完全攻略【プロ級デザイン】', url: 'https://www.youtube.com/results?search_query=Canva+完全攻略+プロ' },
+                        { title: 'Canva プレゼン資料作成テクニック', url: 'https://www.youtube.com/results?search_query=Canva+プレゼン+資料+作成' },
+                        { title: 'Canva 動画編集 初心者向け', url: 'https://www.youtube.com/results?search_query=Canva+動画編集+初心者' },
+                        { title: 'Canva AI機能 活用術', url: 'https://www.youtube.com/results?search_query=Canva+AI+機能+活用' },
+                        { title: 'mikimiki Canva デザイン講座', url: 'https://www.youtube.com/@mikikitatkyoto' },
+                        { title: 'Canva ショート動画作成', url: 'https://www.youtube.com/results?search_query=Canva+ショート動画+作成' },
+                        { title: 'Canva ブランドキット活用', url: 'https://www.youtube.com/results?search_query=Canva+ブランドキット+使い方' },
+                        { title: 'Canva チラシ・ポスター作成', url: 'https://www.youtube.com/results?search_query=Canva+チラシ+ポスター+作成' },
+                        { title: 'Canva SNS投稿デザイン', url: 'https://www.youtube.com/results?search_query=Canva+SNS+投稿+デザイン' },
+                        { title: 'Canva Pro 機能解説', url: 'https://www.youtube.com/results?search_query=Canva+Pro+機能+解説' }
+                    ]
+                },
+                {
+                    id: 'coaching', name: 'コーチング', icon: '🎯', goalHours: 20,
+                    entries: [
+                        { id: 1, date: '2025-05-16', theme: 'コーチング入門講座 石川尚子', description: 'ICFプロフェッショナル認定コーチ', hours: 2, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-12-27', theme: 'アドラー心理学コーチング 宮越さん', description: 'アドラー心理学ベース', hours: 1, media: 'その他', url: '' }
+                    ],
+                    videos: [
+                        { title: 'コーチング入門 基礎から学ぶ', url: 'https://www.youtube.com/results?search_query=コーチング+入門+基礎' },
+                        { title: 'アドラー心理学 コーチング実践', url: 'https://www.youtube.com/results?search_query=アドラー心理学+コーチング' },
+                        { title: 'ICF認定コーチ 傾聴スキル', url: 'https://www.youtube.com/results?search_query=ICF+コーチング+傾聴' },
+                        { title: '1on1ミーティング コーチング術', url: 'https://www.youtube.com/results?search_query=1on1+コーチング+ミーティング' },
+                        { title: '質問力を高めるコーチング', url: 'https://www.youtube.com/results?search_query=コーチング+質問力' },
+                        { title: 'コーチングスキル 実践練習', url: 'https://www.youtube.com/results?search_query=コーチング+スキル+実践' },
+                        { title: 'フィードバックの技術', url: 'https://www.youtube.com/results?search_query=コーチング+フィードバック+技術' },
+                        { title: '目標設定 GROWモデル', url: 'https://www.youtube.com/results?search_query=GROW+モデル+コーチング' },
+                        { title: 'リーダーのためのコーチング', url: 'https://www.youtube.com/results?search_query=リーダー+コーチング+マネジメント' },
+                        { title: 'コーチング資格 取得ガイド', url: 'https://www.youtube.com/results?search_query=コーチング+資格+取得' }
+                    ]
+                },
+                {
+                    id: 'sql', name: 'SQL・データベース', icon: '🗄️', goalHours: 30,
+                    entries: [
+                        { id: 1, date: '2025-05-28', theme: 'SQL 2倍速学習', description: '資料作成前の知識アップ', hours: 2, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-06-09', theme: 'Access', description: 'Access操作基礎', hours: 4, media: 'その他', url: '' },
+                        { id: 3, date: '2025-07-12', theme: 'SQL教材作成', description: 'Access VBA開発含む', hours: 5.5, media: 'その他', url: '' },
+                        { id: 4, date: '2025-07-21', theme: 'SQLServer 正規化準備まで', description: 'データベース正規化', hours: 3, media: 'Udemy Business', url: '' }
+                    ],
+                    videos: [
+                        { title: 'SQL 入門講座【完全版】', url: 'https://www.youtube.com/results?search_query=SQL+入門+完全版' },
+                        { title: 'SQL Server 基礎から応用', url: 'https://www.youtube.com/results?search_query=SQL+Server+基礎+応用' },
+                        { title: 'データベース正規化 わかりやすく', url: 'https://www.youtube.com/results?search_query=データベース+正規化+わかりやすい' },
+                        { title: 'SQL 実践クエリ練習', url: 'https://www.youtube.com/results?search_query=SQL+クエリ+練習+実践' },
+                        { title: 'Access SQL 活用術', url: 'https://www.youtube.com/results?search_query=Access+SQL+活用' },
+                        { title: 'SELECT文 完全マスター', url: 'https://www.youtube.com/results?search_query=SQL+SELECT+完全マスター' },
+                        { title: 'JOIN テーブル結合 解説', url: 'https://www.youtube.com/results?search_query=SQL+JOIN+結合+解説' },
+                        { title: 'サブクエリ 使い方', url: 'https://www.youtube.com/results?search_query=SQL+サブクエリ+使い方' },
+                        { title: 'インデックス 最適化', url: 'https://www.youtube.com/results?search_query=SQL+インデックス+最適化' },
+                        { title: 'ER図 設計入門', url: 'https://www.youtube.com/results?search_query=ER図+データベース+設計' }
+                    ]
+                },
+                {
+                    id: 'power-bi', name: 'Power BI', icon: '📊', goalHours: 20,
+                    entries: [
+                        { id: 1, date: '2025-05-27', theme: 'Power BI Desktop Youseful', description: 'section27まで終了', hours: 3, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-12-08', theme: 'Power BI ビジュアル設定', description: 'ビジュアル設定学習', hours: 1, media: 'Udemy Business', url: '' }
+                    ],
+                    videos: [
+                        { title: 'Power BI Desktop 入門講座', url: 'https://www.youtube.com/results?search_query=Power+BI+Desktop+入門' },
+                        { title: 'Youseful Power BI 完全マスター', url: 'https://www.youtube.com/results?search_query=Youseful+Power+BI' },
+                        { title: 'Power BI ダッシュボード作成', url: 'https://www.youtube.com/results?search_query=Power+BI+ダッシュボード+作成' },
+                        { title: 'DAX関数 基礎から学ぶ', url: 'https://www.youtube.com/results?search_query=Power+BI+DAX+関数+基礎' },
+                        { title: 'Power BI データモデリング', url: 'https://www.youtube.com/results?search_query=Power+BI+データモデリング' },
+                        { title: 'Power Query データ変換', url: 'https://www.youtube.com/results?search_query=Power+Query+データ変換' },
+                        { title: 'Power BI レポート作成', url: 'https://www.youtube.com/results?search_query=Power+BI+レポート+作成' },
+                        { title: 'Power BI サービス 共有', url: 'https://www.youtube.com/results?search_query=Power+BI+Service+共有' },
+                        { title: 'Power BI モバイルアプリ', url: 'https://www.youtube.com/results?search_query=Power+BI+モバイル+アプリ' },
+                        { title: 'Power BI 活用事例 企業', url: 'https://www.youtube.com/results?search_query=Power+BI+活用事例+企業' }
+                    ]
+                },
+                {
+                    id: 'davinci-resolve', name: 'DaVinci Resolve', icon: '🎬', goalHours: 30,
+                    entries: [
+                        { id: 1, date: '2025-09-03', theme: 'DaVinci Resolve 基礎学習', description: 'Udemy講座', hours: 4.25, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-09-06', theme: 'DaVinci Resolve AI編集15選', description: 'Python自動編集含む', hours: 2.5, media: 'YouTube', url: '' },
+                        { id: 3, date: '2025-12-26', theme: 'DaVinci Resolve超入門 認定トレーナー', description: 'ゼロから始める動画編集', hours: 7, media: 'Udemy Business', url: '' }
+                    ],
+                    videos: [
+                        { title: 'DaVinci Resolve 初心者向け完全入門', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+初心者+入門' },
+                        { title: 'DaVinci Resolve カット編集 基礎', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+カット編集' },
+                        { title: 'DaVinci Resolve カラーグレーディング', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+カラーグレーディング' },
+                        { title: 'DaVinci Resolve Fusion 使い方', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+Fusion+使い方' },
+                        { title: 'DaVinci Resolve Fairlight 音声編集', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+Fairlight+音声' },
+                        { title: 'DaVinci Resolve エフェクト追加', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+エフェクト' },
+                        { title: 'DaVinci Resolve テロップ作成', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+テロップ+字幕' },
+                        { title: 'DaVinci Resolve 書き出し設定', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+書き出し+設定' },
+                        { title: 'DaVinci Resolve ショートカット', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+ショートカット+効率化' },
+                        { title: 'DaVinci Resolve AI機能 15選', url: 'https://www.youtube.com/results?search_query=DaVinci+Resolve+AI+機能' }
+                    ]
+                },
+                {
+                    id: 'python', name: 'Python', icon: '🐍', goalHours: 30,
+                    entries: [
+                        { id: 1, date: '2025-12-16', theme: 'キノコード Python統合版', description: 'Python入門学習', hours: 2, media: 'YouTube', url: 'https://youtu.be/YEr-cz9pAHU' }
+                    ],
+                    videos: [
+                        { title: 'キノコード Python入門 完全版', url: 'https://youtu.be/YEr-cz9pAHU' },
+                        { title: 'Python 基礎文法 初心者向け', url: 'https://www.youtube.com/results?search_query=Python+基礎文法+初心者' },
+                        { title: 'Python 自動化スクリプト作成', url: 'https://www.youtube.com/results?search_query=Python+自動化+スクリプト' },
+                        { title: 'Python データ分析 pandas', url: 'https://www.youtube.com/results?search_query=Python+pandas+データ分析' },
+                        { title: 'Python × Excel 自動化', url: 'https://www.youtube.com/results?search_query=Python+Excel+自動化' },
+                        { title: 'Python Webスクレイピング', url: 'https://www.youtube.com/results?search_query=Python+Webスクレイピング+入門' },
+                        { title: 'Python API連携 基礎', url: 'https://www.youtube.com/results?search_query=Python+API+連携+基礎' },
+                        { title: 'Python GUI作成 tkinter', url: 'https://www.youtube.com/results?search_query=Python+GUI+tkinter' },
+                        { title: 'Python 機械学習 入門', url: 'https://www.youtube.com/results?search_query=Python+機械学習+入門' },
+                        { title: 'Python 環境構築 完全ガイド', url: 'https://www.youtube.com/results?search_query=Python+環境構築+初心者' }
+                    ]
+                },
+                {
+                    id: 'excel', name: 'Excel・ピボット', icon: '📈', goalHours: 50,
+                    entries: [
+                        { id: 1, date: '2025-10-13', theme: 'エクセル初級・中級', description: 'Excel基礎〜中級', hours: 14, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-10-30', theme: 'グローリープロダクツ様 表計算講義', description: '講義実施', hours: 6, media: 'その他', url: '' },
+                        { id: 3, date: '2025-11-01', theme: 'ピボット初中級', description: 'ピボットテーブル学習', hours: 23, media: 'Udemy Business', url: '' }
+                    ],
+                    videos: [
+                        { title: 'Excel 初級から中級 完全マスター', url: 'https://www.youtube.com/results?search_query=Excel+初級+中級+完全' },
+                        { title: 'ピボットテーブル 完全攻略', url: 'https://www.youtube.com/results?search_query=Excel+ピボットテーブル+完全' },
+                        { title: 'Excel 関数 実践テクニック', url: 'https://www.youtube.com/results?search_query=Excel+関数+実践+テクニック' },
+                        { title: 'Excel VBA 入門講座', url: 'https://www.youtube.com/results?search_query=Excel+VBA+入門' },
+                        { title: 'VLOOKUP XLOOKUP 使い方', url: 'https://www.youtube.com/results?search_query=Excel+VLOOKUP+XLOOKUP' },
+                        { title: 'Excel 条件付き書式 活用', url: 'https://www.youtube.com/results?search_query=Excel+条件付き書式+活用' },
+                        { title: 'Excel グラフ作成 テクニック', url: 'https://www.youtube.com/results?search_query=Excel+グラフ+作成+テクニック' },
+                        { title: 'Excel Power Query 入門', url: 'https://www.youtube.com/results?search_query=Excel+Power+Query+入門' },
+                        { title: 'Excel ショートカット 時短術', url: 'https://www.youtube.com/results?search_query=Excel+ショートカット+時短' },
+                        { title: 'Excel データ集計 効率化', url: 'https://www.youtube.com/results?search_query=Excel+データ集計+効率化' }
+                    ]
+                },
+                {
+                    id: 'gas', name: 'GAS', icon: '📜', goalHours: 20,
+                    entries: [
+                        { id: 1, date: '2025-11-26', theme: 'GAS / 情報漏洩セキュリティ', description: '主に資料作成', hours: 6.5, media: 'Udemy Business', url: '' },
+                        { id: 2, date: '2025-12-06', theme: 'GAS APIでHTMLファイル作成', description: 'Claude Sonetで成功', hours: 6, media: 'その他', url: '' }
+                    ],
+                    videos: [
+                        { title: 'Google Apps Script 入門講座', url: 'https://www.youtube.com/results?search_query=Google+Apps+Script+入門' },
+                        { title: 'GAS スプレッドシート自動化', url: 'https://www.youtube.com/results?search_query=GAS+スプレッドシート+自動化' },
+                        { title: 'GAS × Gmail 自動化', url: 'https://www.youtube.com/results?search_query=GAS+Gmail+自動化' },
+                        { title: 'GAS API連携 基礎', url: 'https://www.youtube.com/results?search_query=GAS+API+連携' },
+                        { title: 'GAS Webアプリ作成', url: 'https://www.youtube.com/results?search_query=GAS+Webアプリ+作成' },
+                        { title: 'GAS カレンダー連携', url: 'https://www.youtube.com/results?search_query=GAS+Googleカレンダー+連携' },
+                        { title: 'GAS フォーム自動処理', url: 'https://www.youtube.com/results?search_query=GAS+Googleフォーム+自動処理' },
+                        { title: 'GAS ドライブ操作', url: 'https://www.youtube.com/results?search_query=GAS+Googleドライブ+操作' },
+                        { title: 'GAS Slack連携', url: 'https://www.youtube.com/results?search_query=GAS+Slack+連携+通知' },
+                        { title: 'GAS 定期実行 トリガー', url: 'https://www.youtube.com/results?search_query=GAS+トリガー+定期実行' }
+                    ]
+                }
+            ]
+        };
+
+        let dashboardData = { tabs: [] };
+
+        // ============================================
+        // 初期化
+        // ============================================
+        async function init() {
+            await loadFromSpreadsheet();
+        }
+
+        // ============================================
+        // スプレッドシート連携
+        // ============================================
+        
+        // API URLが正しく設定されているかチェック
+        function isApiConfigured() {
+            return API_URL && API_URL.startsWith('https://script.google.com/');
+        }
+
+        async function loadFromSpreadsheet() {
+            showLoading(true);
+
+            // API未設定の場合はローカルモードで起動
+            if (!isApiConfigured()) {
+                updateStatus('disconnected', 'ローカルモード（API未設定）');
+                const local = localStorage.getItem('dxSkillDashboardCloud');
+                if (local) {
+                    dashboardData = JSON.parse(local);
+                    showToast('ローカルデータを読み込みました', 'success');
+                } else {
+                    dashboardData = JSON.parse(JSON.stringify(defaultData));
+                    localStorage.setItem('dxSkillDashboardCloud', JSON.stringify(dashboardData));
+                    showToast('初期データを設定しました', 'success');
+                }
+                renderAll();
+                showLoading(false);
+                return;
+            }
+
+            // API設定済みの場合はスプレッドシートから読み込み
+            updateStatus('syncing', '同期中...');
+
+            try {
+                const response = await fetch(`${API_URL}?action=load`);
+                const result = await response.json();
+
+                if (result.success && result.data) {
+                    dashboardData = result.data;
+                    updateStatus('connected', 'スプレッドシート接続中');
+                    updateSyncInfo();
+                    showToast('データを読み込みました', 'success');
+                } else {
+                    // データがない場合は初期データを使用して保存
+                    dashboardData = JSON.parse(JSON.stringify(defaultData));
+                    await saveToSpreadsheet();
+                    updateStatus('connected', 'スプレッドシート接続中');
+                    showToast('初期データを設定しました', 'success');
+                }
+            } catch (error) {
+                console.error('Load error:', error);
+                updateStatus('disconnected', '接続エラー - ローカルモード');
+                showToast('接続エラー: ローカルデータを使用', 'error');
+                
+                // ローカルデータにフォールバック
+                const local = localStorage.getItem('dxSkillDashboardCloud');
+                if (local) {
+                    dashboardData = JSON.parse(local);
+                } else {
+                    dashboardData = JSON.parse(JSON.stringify(defaultData));
+                }
+            }
+
+            renderAll();
+            showLoading(false);
+        }
+
+        async function saveToSpreadsheet() {
+            // API未設定の場合はローカルのみに保存
+            if (!isApiConfigured()) {
+                localStorage.setItem('dxSkillDashboardCloud', JSON.stringify(dashboardData));
+                updateSyncInfo();
+                return;
+            }
+
+            updateStatus('syncing', '保存中...');
+
+            try {
+                await fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'save', data: dashboardData })
+                });
+
+                updateStatus('connected', 'スプレッドシート接続中');
+                updateSyncInfo();
+                
+                // ローカルにもバックアップ保存
+                localStorage.setItem('dxSkillDashboardCloud', JSON.stringify(dashboardData));
+
+            } catch (error) {
+                console.error('Save error:', error);
+                updateStatus('disconnected', '保存エラー');
+                showToast('保存エラー', 'error');
+                // ローカルには保存
+                localStorage.setItem('dxSkillDashboardCloud', JSON.stringify(dashboardData));
+            }
+        }
+
+        // ============================================
+        // UI更新関数
+        // ============================================
+        function updateStatus(status, text) {
+            const dot = document.getElementById('statusDot');
+            const textEl = document.getElementById('statusText');
+            dot.className = 'status-dot';
+            if (status === 'connected') dot.classList.add('connected');
+            else if (status === 'syncing') dot.classList.add('syncing');
+            textEl.textContent = text;
+        }
+
+        function updateSyncInfo() {
+            const now = new Date();
+            document.getElementById('syncInfo').textContent = `最終同期: ${now.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+        }
+
+        function showLoading(show) {
+            document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // ============================================
+        // レンダリング
+        // ============================================
+        function renderProgressCards() {
+            const grid = document.getElementById('progressGrid');
+            grid.innerHTML = '';
+            dashboardData.tabs.forEach((tab, index) => {
+                const totalHours = tab.entries.reduce((sum, e) => sum + (parseFloat(e.hours) || 0), 0);
+                const percent = Math.min(100, Math.round((totalHours / tab.goalHours) * 100));
+                const card = document.createElement('div');
+                card.className = 'progress-card';
+                card.onclick = () => switchTab(tab.id);
+                card.innerHTML = `
+                    <div class="progress-card-header">
+                        <span class="progress-card-title">${tab.icon} ${tab.name}</span>
+                        <span class="progress-card-percent">${percent}%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width:${percent}%;background:${colorPalette[index % colorPalette.length]}"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span>${totalHours}h / ${tab.goalHours}h</span>
+                        <span>${tab.entries.length}件</span>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function renderTabs(activeTabId) {
+            const nav = document.getElementById('tabNav');
+            nav.innerHTML = '';
+            dashboardData.tabs.forEach((tab, index) => {
+                const btn = document.createElement('button');
+                const isActive = activeTabId ? tab.id === activeTabId : index === 0;
+                btn.className = `tab-btn ${isActive ? 'active' : ''}`;
+                btn.innerHTML = `<span>${tab.icon} ${tab.name}</span><span class="delete-tab" onclick="event.stopPropagation();deleteTab('${tab.id}')" title="削除">×</span>`;
+                btn.onclick = () => switchTab(tab.id);
+                btn.ondblclick = () => openEditTabModal(tab.id);
+                nav.appendChild(btn);
+            });
+        }
+
+        function renderTabContents(activeTabId) {
+            const container = document.getElementById('tabContents');
+            container.innerHTML = '';
+            dashboardData.tabs.forEach((tab, index) => {
+                const content = document.createElement('div');
+                content.id = `tab-${tab.id}`;
+                const isActive = activeTabId ? tab.id === activeTabId : index === 0;
+                content.className = `tab-content ${isActive ? 'active' : ''}`;
+                
+                const entriesHtml = tab.entries.length > 0 
+                    ? tab.entries.map(e => createEntryHtml(tab.id, e)).join('')
+                    : '<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだ記録がありません</p></div>';
+                
+                const videos = tab.videos || [];
+                const videosHtml = `
+                    <div class="videos-section">
+                        <div class="videos-header">
+                            <h4>🎥 おすすめ学習動画（${videos.length}本）</h4>
+                            <button class="btn btn-small btn-secondary" onclick="toggleAddVideoForm('${tab.id}')">＋ 動画追加</button>
+                        </div>
+                        <div class="add-video-form" id="addVideoForm-${tab.id}">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>タイトル</label>
+                                    <input type="text" id="newVideoTitle-${tab.id}" placeholder="動画タイトル">
+                                </div>
+                                <div class="form-group">
+                                    <label>URL</label>
+                                    <input type="url" id="newVideoUrl-${tab.id}" placeholder="https://...">
+                                </div>
+                                <button class="btn btn-primary btn-small" onclick="addVideo('${tab.id}')">追加</button>
+                            </div>
+                        </div>
+                        <div class="video-list">
+                            ${videos.map((v, i) => `
+                                <div class="video-item">
+                                    <div class="video-item-actions">
+                                        <button onclick="openEditVideoModal('${tab.id}',${i})" title="編集">✏️</button>
+                                        <button onclick="deleteVideo('${tab.id}',${i})" title="削除">🗑️</button>
+                                    </div>
+                                    <div class="video-icon"><svg viewBox="0 0 24 24"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg></div>
+                                    <div class="video-item-title">${v.title}</div>
+                                    <a href="${v.url}" target="_blank" class="video-item-link">動画を見る →</a>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+
+                content.innerHTML = `
+                    <div class="content-header">
+                        <h3>${tab.icon} ${tab.name}</h3>
+                        <button class="btn btn-secondary btn-small" onclick="openEditTabModal('${tab.id}')">✏️ 編集</button>
+                    </div>
+                    <form class="entry-form" onsubmit="addEntry(event,'${tab.id}')">
+                        <div class="form-group">
+                            <label>日付</label>
+                            <input type="date" id="date-${tab.id}" value="${new Date().toISOString().split('T')[0]}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>テーマ</label>
+                            <input type="text" id="theme-${tab.id}" placeholder="学習テーマ" required>
+                        </div>
+                        <div class="form-group">
+                            <label>説明</label>
+                            <input type="text" id="desc-${tab.id}" placeholder="詳細（任意）">
+                        </div>
+                        <div class="form-group">
+                            <label>時間</label>
+                            <input type="number" id="hours-${tab.id}" step="0.5" min="0" placeholder="2.5" required>
+                        </div>
+                        <div class="form-group">
+                            <label>媒体</label>
+                            <select id="media-${tab.id}" required>
+                                <option value="Udemy Business">Udemy Business</option>
+                                <option value="YouTube">YouTube</option>
+                                <option value="その他">その他</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>URL</label>
+                            <input type="url" id="url-${tab.id}" placeholder="https://...">
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">＋ 記録を追加</button>
+                        </div>
+                    </form>
+                    <div class="entry-list" id="entries-${tab.id}">${entriesHtml}</div>
+                    ${videosHtml}
+                `;
+                container.appendChild(content);
+            });
+        }
+
+        function createEntryHtml(tabId, entry) {
+            const mediaClass = entry.media === 'Udemy Business' ? 'udemy' : entry.media === 'YouTube' ? 'youtube' : 'other';
+            const urlHtml = entry.url ? `<a href="${entry.url}" target="_blank" class="entry-link">🔗 リンク →</a>` : '';
+            const dateHtml = entry.date ? `<span class="entry-date">📅 ${entry.date}</span>` : '';
+            return `
+                <div class="entry-item" data-id="${entry.id}">
+                    <div class="entry-header">
+                        <span class="entry-title">${entry.theme}</span>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            ${dateHtml}
+                            <span class="entry-badge ${mediaClass}">${entry.media}</span>
+                        </div>
+                    </div>
+                    ${entry.description ? `<p class="entry-description">${entry.description}</p>` : ''}
+                    <div class="entry-footer">
+                        <span class="entry-time">⏱️ ${entry.hours}時間</span>
+                        ${urlHtml}
+                        <div class="entry-actions">
+                            <button onclick="openEditEntryModal('${tabId}',${entry.id})">✏️ 編集</button>
+                            <button onclick="deleteEntry('${tabId}',${entry.id})">🗑️ 削除</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', dashboardData.tabs[i]?.id === tabId);
+            });
+            document.querySelectorAll('.tab-content').forEach(c => {
+                c.classList.toggle('active', c.id === `tab-${tabId}`);
+            });
+        }
+
+        function renderAll() {
+            const activeBtn = document.querySelector('.tab-btn.active');
+            const activeTabId = activeBtn ? dashboardData.tabs[Array.from(document.querySelectorAll('.tab-btn')).indexOf(activeBtn)]?.id : null;
+            renderProgressCards();
+            renderTabs(activeTabId);
+            renderTabContents(activeTabId);
+        }
+
+        // ============================================
+        // データ操作
+        // ============================================
+        async function addEntry(event, tabId) {
+            event.preventDefault();
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            tab.entries.unshift({
+                id: Date.now(),
+                date: document.getElementById(`date-${tabId}`).value,
+                theme: document.getElementById(`theme-${tabId}`).value,
+                description: document.getElementById(`desc-${tabId}`).value,
+                hours: parseFloat(document.getElementById(`hours-${tabId}`).value),
+                media: document.getElementById(`media-${tabId}`).value,
+                url: document.getElementById(`url-${tabId}`).value
+            });
+            await saveToSpreadsheet();
+            renderAll();
+            event.target.reset();
+            document.getElementById(`date-${tabId}`).value = new Date().toISOString().split('T')[0];
+            showToast('記録を追加しました', 'success');
+        }
+
+        async function deleteEntry(tabId, entryId) {
+            if (!confirm('この記録を削除しますか？')) return;
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            tab.entries = tab.entries.filter(e => e.id !== entryId);
+            await saveToSpreadsheet();
+            renderAll();
+            showToast('記録を削除しました', 'success');
+        }
+
+        function openEditEntryModal(tabId, entryId) {
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            const entry = tab.entries.find(e => e.id === entryId);
+            if (!entry) return;
+            document.getElementById('editEntryTabId').value = tabId;
+            document.getElementById('editEntryId').value = entryId;
+            document.getElementById('editEntryDate').value = entry.date || '';
+            document.getElementById('editEntryTheme').value = entry.theme || '';
+            document.getElementById('editEntryDesc').value = entry.description || '';
+            document.getElementById('editEntryHours').value = entry.hours || 0;
+            document.getElementById('editEntryMedia').value = entry.media || 'その他';
+            document.getElementById('editEntryUrl').value = entry.url || '';
+            openModal('editEntry');
+        }
+
+        async function saveEntryEdit() {
+            const tabId = document.getElementById('editEntryTabId').value;
+            const entryId = parseInt(document.getElementById('editEntryId').value);
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            const entry = tab.entries.find(e => e.id === entryId);
+            if (!entry) return;
+            entry.date = document.getElementById('editEntryDate').value;
+            entry.theme = document.getElementById('editEntryTheme').value.trim();
+            entry.description = document.getElementById('editEntryDesc').value.trim();
+            entry.hours = parseFloat(document.getElementById('editEntryHours').value) || 0;
+            entry.media = document.getElementById('editEntryMedia').value;
+            entry.url = document.getElementById('editEntryUrl').value.trim();
+            await saveToSpreadsheet();
+            closeModal('editEntry');
+            renderAll();
+            showToast('記録を更新しました', 'success');
+        }
+
+        async function deleteEntryFromModal() {
+            const tabId = document.getElementById('editEntryTabId').value;
+            const entryId = parseInt(document.getElementById('editEntryId').value);
+            if (!confirm('この記録を削除しますか？')) return;
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            tab.entries = tab.entries.filter(e => e.id !== entryId);
+            await saveToSpreadsheet();
+            closeModal('editEntry');
+            renderAll();
+            showToast('記録を削除しました', 'success');
+        }
+
+        // 動画操作
+        function toggleAddVideoForm(tabId) {
+            document.getElementById(`addVideoForm-${tabId}`).classList.toggle('active');
+        }
+
+        async function addVideo(tabId) {
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            const title = document.getElementById(`newVideoTitle-${tabId}`).value.trim();
+            const url = document.getElementById(`newVideoUrl-${tabId}`).value.trim();
+            if (!title || !url) { alert('タイトルとURLを入力してください'); return; }
+            if (!tab.videos) tab.videos = [];
+            tab.videos.push({ title, url });
+            await saveToSpreadsheet();
+            renderAll();
+            showToast('動画を追加しました', 'success');
+        }
+
+        async function deleteVideo(tabId, index) {
+            if (!confirm('この動画リンクを削除しますか？')) return;
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab || !tab.videos) return;
+            tab.videos.splice(index, 1);
+            await saveToSpreadsheet();
+            renderAll();
+            showToast('動画を削除しました', 'success');
+        }
+
+        function openEditVideoModal(tabId, index) {
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab || !tab.videos || !tab.videos[index]) return;
+            document.getElementById('editVideoTabId').value = tabId;
+            document.getElementById('editVideoIndex').value = index;
+            document.getElementById('editVideoTitle').value = tab.videos[index].title;
+            document.getElementById('editVideoUrl').value = tab.videos[index].url;
+            openModal('editVideo');
+        }
+
+        async function saveVideoEdit() {
+            const tabId = document.getElementById('editVideoTabId').value;
+            const index = parseInt(document.getElementById('editVideoIndex').value);
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab || !tab.videos || !tab.videos[index]) return;
+            tab.videos[index].title = document.getElementById('editVideoTitle').value.trim();
+            tab.videos[index].url = document.getElementById('editVideoUrl').value.trim();
+            await saveToSpreadsheet();
+            closeModal('editVideo');
+            renderAll();
+            showToast('動画を更新しました', 'success');
+        }
+
+        // タブ操作
+        async function addNewTab() {
+            const name = document.getElementById('newTabName').value.trim();
+            const goal = parseInt(document.getElementById('newTabGoal').value) || 50;
+            if (!name) { alert('タブ名を入力してください'); return; }
+            const icons = ['📚','💻','🎯','📊','🔧','💡','🎓','📝','🚀','⚙️'];
+            dashboardData.tabs.push({
+                id: name.toLowerCase().replace(/[^a-z0-9]/g,'-')+'-'+Date.now(),
+                name, icon: icons[Math.floor(Math.random()*icons.length)],
+                goalHours: goal, entries: [], videos: []
+            });
+            await saveToSpreadsheet();
+            renderAll();
+            closeModal('addTab');
+            document.getElementById('newTabName').value = '';
+            document.getElementById('newTabGoal').value = '50';
+            showToast('タブを追加しました', 'success');
+        }
+
+        async function deleteTab(tabId) {
+            if (!confirm('このタブとすべての学習記録を削除しますか？\n※この操作は取り消せません')) return;
+            dashboardData.tabs = dashboardData.tabs.filter(t => t.id !== tabId);
+            await saveToSpreadsheet();
+            renderAll();
+            showToast('タブを削除しました', 'success');
+        }
+
+        async function deleteTabFromModal() {
+            const tabId = document.getElementById('editTabId').value;
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            if (!confirm(`「${tab.name}」タブを削除しますか？\n（${tab.entries.length}件の記録も削除されます）`)) return;
+            dashboardData.tabs = dashboardData.tabs.filter(t => t.id !== tabId);
+            await saveToSpreadsheet();
+            closeModal('editTab');
+            renderAll();
+            showToast('タブを削除しました', 'success');
+        }
+
+        function openEditTabModal(tabId) {
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            document.getElementById('editTabId').value = tabId;
+            document.getElementById('editTabName').value = tab.name;
+            document.getElementById('editTabGoal').value = tab.goalHours;
+            openModal('editTab');
+        }
+
+        async function saveTabEdit() {
+            const tabId = document.getElementById('editTabId').value;
+            const tab = dashboardData.tabs.find(t => t.id === tabId);
+            if (!tab) return;
+            tab.name = document.getElementById('editTabName').value.trim();
+            tab.goalHours = parseInt(document.getElementById('editTabGoal').value) || 50;
+            await saveToSpreadsheet();
+            closeModal('editTab');
+            renderAll();
+            showToast('タブを更新しました', 'success');
+        }
+
+        // モーダル
+        function openModal(type) { document.getElementById(`${type}Modal`).classList.add('active'); }
+        function closeModal(type) { document.getElementById(`${type}Modal`).classList.remove('active'); }
+
+        // エクスポート
+        function exportData() {
+            const blob = new Blob([JSON.stringify(dashboardData, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `dx_dashboard_backup_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            showToast('データをエクスポートしました', 'success');
+        }
+
+        // イベントリスナー
+        document.querySelectorAll('.modal-overlay').forEach(o => {
+            o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); });
+        });
+
+        // 初期化実行
+        init();
+    </script>
+</body>
+</html>
